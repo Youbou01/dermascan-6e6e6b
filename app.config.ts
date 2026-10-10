@@ -41,7 +41,20 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     extra: {
       appStoreAppId: process.env.BILT_APP_STORE_APP_ID,
     },
-    plugins: ['expo-router', 'expo-font', ...nativePlugins],
+    plugins: [
+      'expo-router',
+      'expo-font',
+      'expo-splash-screen',
+      [
+        'expo-camera',
+        {
+          cameraPermission: 'Allow DermaScan to scan product barcodes.',
+          barcodeScannerEnabled: true,
+          recordAudioAndroid: false,
+        },
+      ],
+      ...nativePlugins,
+    ],
     experiments: {
       typedRoutes: true,
       reactCompiler: true,

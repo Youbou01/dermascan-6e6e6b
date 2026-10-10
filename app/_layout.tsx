@@ -11,6 +11,7 @@ import {
 } from '@expo-google-fonts/inter';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { Platform } from 'react-native';
+import { colors } from '@/lib/theme';
 import { useEffect } from 'react';
 import * as DevClient from 'expo-dev-client';
 import { HeroUINativeProvider } from 'heroui-native';
@@ -145,8 +146,18 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <HeroUINativeProvider>
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ title: 'Habits', headerShown: false }} />
+        <Stack
+          screenOptions={{
+            headerStyle: { backgroundColor: colors.background },
+            headerTintColor: colors.ink,
+            headerTitleStyle: { fontFamily: 'Inter_600SemiBold', fontSize: 16 },
+            headerShadowVisible: false,
+            contentStyle: { backgroundColor: colors.background },
+          }}
+        >
+          <Stack.Screen name="(tabs)" options={{ title: 'Home', headerShown: false }} />
+          <Stack.Screen name="product/[id]" options={{ title: 'Product details' }} />
+          <Stack.Screen name="scan" options={{ title: 'Scan a product' }} />
         </Stack>
         <InstallPrompt />
       </HeroUINativeProvider>

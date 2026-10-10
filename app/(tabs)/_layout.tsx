@@ -1,45 +1,14 @@
-import { Home } from 'lucide-react-native';
-import { Tabs } from 'expo-router';
+import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useThemeColor } from 'heroui-native';
-import { useUniwind } from 'uniwind';
-
-export default function TabLayout() {
-  const { theme } = useUniwind();
-  const [background, foreground, border, accent, muted] = useThemeColor([
-    'background',
-    'foreground',
-    'border',
-    'accent',
-    'muted',
-  ]);
-
+import { colors } from '@/lib/theme';
+export default function HomeLayout() {
   return (
     <>
-      <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
-      <Tabs
-        screenOptions={{
-          headerStyle: { backgroundColor: background },
-          headerTintColor: foreground,
-          headerTitleStyle: { color: foreground },
-          headerShadowVisible: false,
-          sceneStyle: { backgroundColor: background },
-          tabBarStyle: {
-            backgroundColor: background,
-            borderTopColor: border,
-          },
-          tabBarActiveTintColor: accent,
-          tabBarInactiveTintColor: muted,
-        }}
-      >
-        <Tabs.Screen
-          name="index"
-          options={{
-            title: 'Home',
-            tabBarIcon: ({ color, size }) => <Home color={color} size={size ?? 24} />,
-          }}
-        />
-      </Tabs>
+      {/* eslint-disable-next-line react/style-prop-object -- Expo StatusBar style is a string enum, not a React Native style object. */}
+      <StatusBar style="dark" />
+      <Stack
+        screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}
+      />
     </>
   );
 }
