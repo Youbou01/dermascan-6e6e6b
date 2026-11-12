@@ -24,6 +24,7 @@ import {
 } from 'expo-router';
 
 import { patchExpoGoAssetUrls } from '@/lib/expoGoAssets';
+import { registerColorTokens } from '@/lib/registerColorTokens';
 import { initPostHog } from '@/lib/posthog';
 import { registerServiceWorker } from '@/lib/registerServiceWorker';
 import { reportErrorToParent } from '@/lib/reportPreviewError';
@@ -47,6 +48,7 @@ export { ErrorBoundary };
 
 // Before any screen renders an Image or loads a font.
 patchExpoGoAssetUrls();
+registerColorTokens();
 
 // Starter is light-only by default. Remove this when implementing requested dark mode.
 Uniwind.setTheme('light');

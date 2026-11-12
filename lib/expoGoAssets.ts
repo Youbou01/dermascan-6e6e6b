@@ -1,7 +1,5 @@
 import Constants, { ExecutionEnvironment } from 'expo-constants';
-
-type PackagerAsset = { httpServerLocation: string };
-type AssetRegistry = { getAssetByID: (assetId: number) => PackagerAsset | undefined };
+import { AssetRegistry } from 'react-native';
 
 /**
  * Make bundled assets (images, fonts) load in Expo Go behind the Bilt preview proxy.
@@ -24,16 +22,14 @@ export function patchExpoGoAssetUrls(): void {
   const base = devServerBase(Constants.__unsafeNoWarnManifest2?.launchAsset?.url);
   if (!base) return;
 
-  // The module object is the patch point, so this can't be a named import.
-  // oxlint-disable-next-line typescript/no-require-imports
-  const registry: AssetRegistry = require('@react-native/assets-registry/registry');
-  const getAssetByID = registry.getAssetByID;
+  const getAssetByID = AssetRegistry.getAssetByID.bind(AssetRegistry);
 
-  registry.getAssetByID = (assetId) => {
+  AssetRegistry.getAssetByID = (assetId) => {
     const asset = getAssetByID(assetId);
     // Registry entries are shared, so absolutising in place runs once per asset.
     if (asset?.httpServerLocation.startsWith('/')) {
-      asset.httpServerLocation = base + asset.httpServerLocation;
+      (asset as { httpServerLocation: string }).httpServerLocation =
+        base + asset.httpServerLocation;
     }
     return asset;
   };
