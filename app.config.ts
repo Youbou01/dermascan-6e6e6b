@@ -45,6 +45,15 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       'expo-router',
       'expo-font',
       'expo-splash-screen',
+      'expo-secure-store',
+      [
+        'expo-image-picker',
+        {
+          photosPermission: 'Allow DermaScan to read a photo of a product label.',
+          cameraPermission: 'Allow DermaScan to photograph ingredient labels.',
+          microphonePermission: false,
+        },
+      ],
       [
         'expo-camera',
         {

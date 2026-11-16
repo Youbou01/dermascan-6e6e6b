@@ -1,317 +1,292 @@
 import { useState } from 'react';
-import { View, ScrollView } from 'react-native';
-import { Stack, Link, router, useLocalSearchParams } from 'expo-router';
-import { Button, Tabs, PressableFeedback } from 'heroui-native';
-import { ChevronDown, ChevronUp, Info, Fingerprint, FlaskConical } from 'lucide-react-native';
+import { View } from 'react-native';
+import { Button, FieldError, Tabs } from 'heroui-native';
+import { router, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { products, getScore, ratingLabels, demoNotice, type Rating } from '@/lib/catalog';
-import { colors } from '@/lib/theme';
+import { useMutation } from '@tanstack/react-query';
+import { Screen } from '@/components/Screen';
 import { AppText } from '@/components/AppText';
-import { ProductArtwork } from '@/components/ProductArtwork';
-import { ratingColors } from '@/components/ScoreBadge';
-
-export default function ProductDetail() {
+import { ProductPhoto } from '@/components/ProductPhoto';
+import { AnalysisScore, Formula } from '@/components/Formula';
+import { DataState, LoadingState, SignInGate } from '@/components/DataState';
+import {
+  useBlacklist,
+  useProduct,
+  useProfile,
+  useSuitability,
+  notifySuccess,
+  privateKey,
+  queryClient,
+  useUserId,
+} from '@/lib/api/queries';
+import { ApiError, errorMessage, request } from '@/lib/api/client';
+import type { Ingredient, Profile, ProfileInput } from '@/lib/api/types';
+import { colors } from '@/lib/theme';
+export default function ProductDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const product = products.find((item) => item.id === id);
+  const uid = useUserId();
+  const product = useProduct(id);
+  const profile = useProfile();
+  const blacklist = useBlacklist();
   const [tab, setTab] = useState('ingredients');
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const insets = useSafeAreaInsets();
-  const header = (
-    <Stack.Screen
-      options={{
-        title: 'Product details',
-        headerLeft: router.canGoBack()
-          ? undefined
-          : () => (
-              <Link
-                href="/"
-                style={{
-                  color: colors.ink,
-                  paddingHorizontal: 12,
-                  fontFamily: 'Inter_500Medium',
-                  fontSize: 14,
-                }}
-              >
-                Home
-              </Link>
-            ),
-      }}
-    />
-  );
-  if (!product)
-    return (
-      <View
-        style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 18, padding: 24 }}
-      >
-        {header}
-        <FlaskConical size={36} color={colors.muted} />
-        <AppText>That product isn&apos;t in the demo catalog.</AppText>
-        <Link href="/" asChild>
-          <Button>
-            <Button.Label>Explore products</Button.Label>
-          </Button>
-        </Link>
-      </View>
-    );
-  const score = getScore(product);
-  const ratings: Rating[] = ['favorable', 'caution', 'flagged'];
+  const [selected, setSelected] = useState<Ingredient | null>(null);
+  const suitability = useSuitability(id, tab === 'compatibility' && !!profile.data?.skin_type);
+  const mutation = useMutation({
+    mutationFn: async (action: 'allergy' | 'ingredient' | 'product') => {
+      if (action === 'allergy') {
+        if (!selected?.ingredient_id) return;
+        const current = await request<Profile>('/profile', { auth: true });
+        const ids = current.allergy_ingredient_ids.includes(selected.ingredient_id)
+          ? current.allergy_ingredient_ids.filter((value) => value !== selected.ingredient_id)
+          : [...current.allergy_ingredient_ids, selected.ingredient_id];
+        const body: ProfileInput = {
+          skin_type: current.skin_type,
+          is_pregnant_or_nursing: current.is_pregnant_or_nursing,
+          health_conditions: current.health_conditions,
+          allergy_ingredient_ids: ids,
+        };
+        await request('/profile', { method: 'PUT', auth: true, body });
+      } else {
+        const ingredientId = selected?.ingredient_id;
+        const target = action === 'product' ? id : ingredientId;
+        if (!target) return;
+        const current = await request<{ product_ids: string[]; ingredient_ids: string[] }>(
+          '/profile/blacklist',
+          { auth: true },
+        );
+        const isPresent = (
+          action === 'product' ? current.product_ids : current.ingredient_ids
+        ).includes(target);
+        await request(
+          '/profile/blacklist/' + (action === 'product' ? 'products/' : 'ingredients/') + target,
+          { auth: true, method: isPresent ? 'DELETE' : 'POST' },
+        );
+      }
+    },
+    onSuccess: () => {
+      notifySuccess();
+      void queryClient.invalidateQueries({ queryKey: privateKey('profile', uid) });
+      void queryClient.invalidateQueries({ queryKey: privateKey('blacklist', uid) });
+      void queryClient.invalidateQueries({ queryKey: ['suitability'] });
+      setSelected(null);
+    },
+  });
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      contentContainerStyle={{ paddingBottom: insets.bottom + 28 }}
-      showsVerticalScrollIndicator={false}
-    >
-      {header}
-      <View
-        style={{
-          marginHorizontal: 22,
-          marginTop: 12,
-          borderRadius: 22,
-          backgroundColor: colors[product.tone],
-          paddingVertical: 8,
-        }}
-      >
-        <ProductArtwork product={product} height={225} />
-        <AppText
-          style={{ textAlign: 'center', fontSize: 11, color: colors.muted, marginBottom: 12 }}
-        >
-          Sample packaging
-        </AppText>
-      </View>
-      <View style={{ paddingHorizontal: 22, paddingTop: 23 }}>
-        <AppText weight="semibold" style={{ fontSize: 12, color: colors.muted, marginBottom: 8 }}>
-          {product.brand}
-        </AppText>
-        <AppText weight="semibold" style={{ fontSize: 27, lineHeight: 34, letterSpacing: -0.8 }}>
-          {product.name}
-        </AppText>
-        <AppText style={{ color: colors.muted, marginTop: 9, fontSize: 13 }}>
-          {product.category} · {product.size}
-        </AppText>
-        <View
-          style={{
-            marginTop: 24,
-            marginBottom: 25,
-            padding: 20,
-            borderRadius: 18,
-            backgroundColor: colors.ink,
+    <Screen title="Product details">
+      {product.isPending ? (
+        <LoadingState />
+      ) : product.isError ? (
+        <DataState
+          error={product.error}
+          onAction={() => {
+            void product.refetch();
           }}
-        >
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 12,
-            }}
-          >
-            <View style={{ flex: 1, gap: 7 }}>
-              <AppText weight="medium" style={{ color: colors.white, fontSize: 16 }}>
-                Ingredient score
-              </AppText>
-              <AppText style={{ color: colors.lavender, fontSize: 12 }}>
-                Illustrative · not a safety rating
-              </AppText>
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+        />
+      ) : (
+        product.data && (
+          <>
+            <ProductPhoto url={product.data.image_url} name={product.data.name} height={225} />
+            <View style={{ gap: 8 }}>
+              {!!product.data.brand && (
+                <AppText weight="semibold" style={{ fontSize: 12, color: colors.muted }}>
+                  {product.data.brand}
+                </AppText>
+              )}
               <AppText
                 weight="semibold"
-                style={{ color: colors.white, fontSize: 38, letterSpacing: -1.5 }}
+                style={{ fontSize: 27, lineHeight: 34, letterSpacing: -0.8 }}
               >
-                {score}
+                {product.data.name}
               </AppText>
-              <AppText style={{ color: colors.lavender, fontSize: 13 }}>/100</AppText>
+              {product.data.category && (
+                <AppText style={{ color: colors.muted }}>{product.data.category.name}</AppText>
+              )}
+              <AppText style={{ fontSize: 11, color: colors.muted }}>
+                {product.data.barcode}
+              </AppText>
             </View>
-          </View>
-          <View
-            accessibilityLabel="Demo ingredient rating distribution"
-            style={{ flexDirection: 'row', gap: 4, height: 6, marginTop: 20 }}
-          >
-            {product.ingredients.map((ingredient) => (
-              <View
-                key={ingredient.name}
-                style={{
-                  flex: 1,
-                  borderRadius: 3,
-                  backgroundColor:
-                    ingredient.rating === 'favorable'
-                      ? colors.greenSoft
-                      : ingredient.rating === 'caution'
-                        ? colors.orangeSoft
-                        : colors.pink,
-                }}
-              />
-            ))}
-          </View>
-        </View>
-        <Tabs
-          value={tab}
-          onValueChange={(value) => {
-            setTab(value);
-            void Haptics.selectionAsync();
-          }}
-        >
-          <Tabs.List className="mb-6">
-            <Tabs.Indicator />
-            <Tabs.Trigger value="ingredients" className="flex-1">
-              <Tabs.Label>Ingredients</Tabs.Label>
-            </Tabs.Trigger>
-            <Tabs.Trigger value="compatibility" className="flex-1">
-              <Tabs.Label>Compatibility</Tabs.Label>
-            </Tabs.Trigger>
-          </Tabs.List>
-          <Tabs.Content value="ingredients">
-            <View
-              style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: 18,
+            <AnalysisScore analysis={product.data} />
+            <Tabs
+              value={tab}
+              onValueChange={(value) => {
+                setTab(value);
+                void Haptics.selectionAsync();
               }}
             >
-              <AppText weight="semibold" style={{ fontSize: 20 }}>
-                Inside the formula
-              </AppText>
-              <AppText style={{ color: colors.muted, fontSize: 12 }}>
-                {product.ingredients.length} ingredients
-              </AppText>
-            </View>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginBottom: 18 }}>
-              {ratings.map((rating) => (
-                <View key={rating} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                  <View
-                    style={{
-                      width: 7,
-                      height: 7,
-                      borderRadius: 4,
-                      backgroundColor: ratingColors[rating].foreground,
+              <Tabs.List className="w-full">
+                <Tabs.Indicator />
+                <Tabs.Trigger value="ingredients" className="flex-1">
+                  <Tabs.Label numberOfLines={1}>Ingredients</Tabs.Label>
+                </Tabs.Trigger>
+                <Tabs.Trigger value="compatibility" className="flex-1">
+                  <Tabs.Label numberOfLines={1}>For you</Tabs.Label>
+                </Tabs.Trigger>
+              </Tabs.List>
+              <Tabs.Content value="ingredients">
+                <View style={{ paddingTop: 22 }}>
+                  <Formula
+                    analysis={product.data}
+                    onEmpty={() => router.push('/analysis')}
+                    onChoose={(ingredient) => {
+                      setSelected(ingredient);
+                      mutation.reset();
                     }}
                   />
-                  <AppText style={{ fontSize: 11, color: colors.muted }}>
-                    {ratingLabels[rating]}
-                  </AppText>
                 </View>
-              ))}
-            </View>
-            {product.ingredients.map((ingredient) => {
-              const palette = ratingColors[ingredient.rating];
-              const open = expanded === ingredient.name;
-              return (
-                <View
-                  key={ingredient.name}
-                  style={{ borderTopWidth: 1, borderTopColor: colors.border }}
-                >
-                  <PressableFeedback
-                    onPress={() => {
-                      setExpanded(open ? null : ingredient.name);
-                      void Haptics.selectionAsync();
-                    }}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${ingredient.name}, ${ratingLabels[ingredient.rating]}, show explanation`}
-                    accessibilityState={{ expanded: open }}
-                    style={{ paddingVertical: 17 }}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                      <View style={{ flex: 1, gap: 5 }}>
-                        <AppText
-                          weight="semibold"
-                          style={{ fontSize: 14, color: palette.foreground }}
-                        >
-                          {ingredient.name}
-                        </AppText>
-                        <AppText style={{ fontSize: 12, color: colors.muted }}>
-                          {ingredient.role}
-                        </AppText>
-                      </View>
-                      <View
-                        style={{
-                          backgroundColor: palette.background,
-                          borderRadius: 20,
-                          paddingHorizontal: 8,
-                          paddingVertical: 5,
-                        }}
-                      >
-                        <AppText
-                          numberOfLines={1}
-                          weight="medium"
-                          style={{ fontSize: 11, color: palette.foreground }}
-                        >
-                          {ratingLabels[ingredient.rating]}
-                        </AppText>
-                      </View>
-                      {open ? (
-                        <ChevronUp size={16} color={colors.muted} />
-                      ) : (
-                        <ChevronDown size={16} color={colors.muted} />
-                      )}
-                    </View>
-                  </PressableFeedback>
-                  {open && (
-                    <AppText
-                      style={{
-                        color: colors.muted,
-                        lineHeight: 21,
-                        fontSize: 13,
-                        paddingBottom: 18,
+              </Tabs.Content>
+              <Tabs.Content value="compatibility">
+                <View style={{ paddingTop: 22, gap: 18 }}>
+                  {!uid ? (
+                    <SignInGate />
+                  ) : profile.isPending ? (
+                    <LoadingState />
+                  ) : profile.isError ? (
+                    <DataState
+                      error={profile.error}
+                      onAction={() => {
+                        void profile.refetch();
                       }}
-                    >
-                      {ingredient.note}
-                    </AppText>
+                    />
+                  ) : !profile.data?.skin_type ? (
+                    <DataState
+                      message="Set your skin profile before checking compatibility."
+                      action="Set skin profile"
+                      onAction={() => router.push('/profile')}
+                    />
+                  ) : suitability.isPending ? (
+                    <LoadingState />
+                  ) : suitability.isError ? (
+                    <DataState
+                      error={suitability.error}
+                      message={
+                        suitability.error instanceof ApiError && suitability.error.status === 404
+                          ? 'Compatibility is unavailable right now. Please try again later.'
+                          : undefined
+                      }
+                      onAction={() => {
+                        void suitability.refetch();
+                      }}
+                    />
+                  ) : (
+                    suitability.data && (
+                      <>
+                        <AppText weight="semibold" style={{ fontSize: 22 }}>
+                          {suitability.data.verdict === 'suitable'
+                            ? 'No profile alerts found'
+                            : suitability.data.verdict === 'avoid'
+                              ? 'Avoid for your profile'
+                              : 'Use with caution'}
+                        </AppText>
+                        {suitability.data.alerts.map((alert) => (
+                          <View
+                            key={JSON.stringify([alert.code, alert.ingredient_name])}
+                            style={{
+                              gap: 8,
+                              paddingVertical: 12,
+                              borderTopWidth: 1,
+                              borderTopColor: colors.border,
+                            }}
+                          >
+                            <AppText
+                              weight="semibold"
+                              style={{
+                                color: alert.severity === 'high' ? colors.red : colors.orange,
+                              }}
+                            >
+                              {alert.title}
+                            </AppText>
+                            <AppText style={{ lineHeight: 21 }}>{alert.detail}</AppText>
+                          </View>
+                        ))}
+                        <AppText style={{ color: colors.muted, fontSize: 12, lineHeight: 19 }}>
+                          Based on your saved profile and recognized ingredients only. This does not
+                          guarantee suitability or safety.
+                        </AppText>
+                        <Button variant="tertiary" onPress={() => router.push('/profile')}>
+                          <Button.Label>Edit skin profile</Button.Label>
+                        </Button>
+                      </>
+                    )
                   )}
                 </View>
-              );
-            })}
-            <View
-              style={{
-                flexDirection: 'row',
-                gap: 9,
-                marginTop: 18,
-                padding: 16,
-                backgroundColor: colors.white,
-                borderRadius: 14,
-              }}
-            >
-              <Info size={17} color={colors.muted} />
-              <View style={{ flex: 1, gap: 8 }}>
-                <AppText weight="medium" style={{ fontSize: 12 }}>
-                  About this demo score
-                </AppText>
-                <AppText style={{ fontSize: 11, color: colors.muted, lineHeight: 17 }}>
-                  {demoNotice} Scores average demo ingredient points: favorable 100, caution 65,
-                  flagged 25. Formula concentrations are not considered.
-                </AppText>
-              </View>
-            </View>
-          </Tabs.Content>
-          <Tabs.Content value="compatibility">
-            <View style={{ alignItems: 'center', paddingVertical: 28, gap: 18 }}>
-              <Fingerprint size={43} color={colors.ink} strokeWidth={1.8} />
-              <AppText weight="semibold" style={{ fontSize: 21 }}>
-                Skincare, made personal.
-              </AppText>
-              <AppText style={{ color: colors.muted, textAlign: 'center', lineHeight: 22 }}>
-                Personalized results based on your health details are coming in a future version.
-              </AppText>
+              </Tabs.Content>
+            </Tabs>
+            {selected && (
               <View
-                style={{
-                  backgroundColor: colors.peach,
-                  borderRadius: 20,
-                  paddingHorizontal: 14,
-                  paddingVertical: 7,
-                }}
+                style={{ backgroundColor: colors.white, padding: 18, borderRadius: 18, gap: 12 }}
               >
-                <AppText weight="medium" style={{ fontSize: 12 }}>
-                  Coming later
-                </AppText>
+                <AppText weight="semibold">{selected.name}</AppText>
+                {!uid ? (
+                  <SignInGate message="Sign in to save allergies and ingredients you avoid." />
+                ) : (
+                  <>
+                    <Button
+                      isDisabled={mutation.isPending || !profile.data}
+                      variant="secondary"
+                      onPress={() => mutation.mutate('allergy')}
+                    >
+                      <Button.Label>
+                        {profile.data?.allergy_ingredient_ids.includes(selected.ingredient_id ?? '')
+                          ? 'Remove allergy'
+                          : 'Save as allergy'}
+                      </Button.Label>
+                    </Button>
+                    <Button
+                      isDisabled={mutation.isPending || !blacklist.data}
+                      variant="secondary"
+                      onPress={() => mutation.mutate('ingredient')}
+                    >
+                      <Button.Label>
+                        {blacklist.data?.ingredient_ids.includes(selected.ingredient_id ?? '')
+                          ? 'Stop avoiding ingredient'
+                          : 'Avoid ingredient'}
+                      </Button.Label>
+                    </Button>
+                    {profile.isError && (
+                      <DataState
+                        error={profile.error}
+                        onAction={() => {
+                          void profile.refetch();
+                        }}
+                      />
+                    )}
+                    {blacklist.isError && (
+                      <DataState
+                        error={blacklist.error}
+                        onAction={() => {
+                          void blacklist.refetch();
+                        }}
+                      />
+                    )}
+                  </>
+                )}
+                <Button size="sm" variant="tertiary" onPress={() => setSelected(null)}>
+                  <Button.Label>Close</Button.Label>
+                </Button>
               </View>
-            </View>
-          </Tabs.Content>
-        </Tabs>
-        <AppText style={{ color: colors.muted, fontSize: 11, marginTop: 24 }}>
-          Demo barcode: {product.barcode}
-        </AppText>
-      </View>
-    </ScrollView>
+            )}
+            {mutation.isError && <FieldError>{errorMessage(mutation.error)}</FieldError>}
+            <Button
+              onPress={() => router.push({ pathname: '/routine/add', params: { productId: id } })}
+            >
+              <Button.Label>Add to a routine</Button.Label>
+            </Button>
+            {uid && (
+              <Button
+                variant="tertiary"
+                isDisabled={mutation.isPending || !blacklist.data}
+                onPress={() => mutation.mutate('product')}
+              >
+                <Button.Label>
+                  {blacklist.data?.product_ids.includes(id)
+                    ? 'Stop avoiding this product'
+                    : 'Avoid this product'}
+                </Button.Label>
+              </Button>
+            )}
+          </>
+        )
+      )}
+    </Screen>
   );
 }

@@ -1,34 +1,63 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FlatList, View, Image, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { Button, Input } from 'heroui-native';
-import { Search, ScanLine, ArrowUpRight, X, FlaskConical } from 'lucide-react-native';
-import { router } from 'expo-router';
+import {
+  Search,
+  ScanLine,
+  ArrowUpRight,
+  X,
+  UserRound,
+  SlidersHorizontal,
+} from 'lucide-react-native';
+import { router, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { products, categories, demoNotice, type Category } from '@/lib/catalog';
+import { useCategories, useProducts, useShelf } from '@/lib/api/queries';
+import type { Filters, RiskBand } from '@/lib/api/types';
 import { colors } from '@/lib/theme';
 import { AppText } from '@/components/AppText';
 import { ProductCard } from '@/components/ProductCard';
-
+import { DataState, LoadingState } from '@/components/DataState';
+const setCategory = (value: string) => router.setParams({ category: value });
 export default function Home() {
+  const params = useLocalSearchParams<{ category?: string }>();
   const [query, setQuery] = useState('');
-  const [category, setCategory] = useState<Category>('All');
+  const [debounced, setDebounced] = useState('');
+  const category = params.category ?? '';
+  const [section, setSection] = useState('top_rated');
+  const [showFilters, setShowFilters] = useState(false);
+  const [band, setBand] = useState<RiskBand | undefined>();
+  const [include, setInclude] = useState('');
+  const [exclude, setExclude] = useState('');
+  const [applied, setApplied] = useState<Pick<Filters, 'include' | 'exclude'>>({});
   const insets = useSafeAreaInsets();
-  const normalized = query.trim().toLowerCase();
-  const filtered = products.filter(
-    (product) =>
-      (category === 'All' || product.category === category) &&
-      [
-        product.name,
-        product.brand,
-        product.category,
-        ...product.ingredients.map((ingredient) => ingredient.name),
-      ].some((value) => value.toLowerCase().includes(normalized)),
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(query.trim()), 350);
+    return () => clearTimeout(timer);
+  }, [query]);
+  const categories = useCategories();
+  const filtering = !!(
+    debounced ||
+    category ||
+    band ||
+    applied.include?.length ||
+    applied.exclude?.length
   );
-  const filtering = normalized.length > 0 || category !== 'All';
+  const search = useProducts(
+    { q: debounced || undefined, category: category || undefined, band, ...applied },
+    filtering,
+  );
+  const shelf = useShelf(section);
+  const result = filtering ? search : shelf;
+  const data = result.data?.pages.flatMap((page) => page.items) ?? [];
   const clear = () => {
     setQuery('');
-    setCategory('All');
+    setDebounced('');
+    setCategory('');
+    setBand(undefined);
+    setInclude('');
+    setExclude('');
+    setApplied({});
     void Haptics.selectionAsync();
   };
   return (
@@ -37,7 +66,7 @@ export default function Home() {
       style={{ flex: 1, backgroundColor: colors.background }}
     >
       <FlatList
-        data={filtered}
+        data={data}
         keyExtractor={(item) => item.id}
         numColumns={2}
         keyboardShouldPersistTaps="handled"
@@ -51,6 +80,15 @@ export default function Home() {
         }}
         ItemSeparatorComponent={() => <View style={{ height: 25 }} />}
         renderItem={({ item }) => <ProductCard product={item} />}
+        refreshing={result.isRefetching && !result.isFetchingNextPage}
+        onRefresh={() => {
+          void result.refetch();
+        }}
+        onEndReached={() => {
+          if (result.hasNextPage && !result.isFetchingNextPage && !result.isError)
+            void result.fetchNextPage();
+        }}
+        onEndReachedThreshold={0.4}
         ListHeaderComponent={
           <>
             <View
@@ -61,24 +99,20 @@ export default function Home() {
                 marginBottom: 26,
               }}
             >
-              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', flex: 1 }}>
                 <ScanLine size={24} color={colors.ink} strokeWidth={1.8} />
                 <AppText weight="bold" style={{ fontSize: 22, letterSpacing: -0.9 }}>
                   DermaScan
                 </AppText>
               </View>
-              <View
-                style={{
-                  backgroundColor: colors.peach,
-                  borderRadius: 20,
-                  paddingHorizontal: 10,
-                  paddingVertical: 6,
-                }}
+              <Button
+                isIconOnly
+                variant="tertiary"
+                accessibilityLabel="Account"
+                onPress={() => router.push('/account')}
               >
-                <AppText weight="medium" style={{ fontSize: 11 }}>
-                  Demo catalog
-                </AppText>
-              </View>
+                <UserRound size={22} color={colors.ink} strokeWidth={1.8} />
+              </Button>
             </View>
             <AppText
               weight="semibold"
@@ -103,8 +137,9 @@ export default function Home() {
                 <Input
                   value={query}
                   onChangeText={setQuery}
-                  placeholder="Product or ingredient"
-                  accessibilityLabel="Search by product, ingredient or category"
+                  maxLength={100}
+                  placeholder="Product or brand"
+                  accessibilityLabel="Search products"
                   autoCapitalize="none"
                   autoCorrect={false}
                   returnKeyType="search"
@@ -119,7 +154,7 @@ export default function Home() {
                     accessibilityLabel="Clear search"
                     onPress={() => setQuery('')}
                   >
-                    <X size={16} color={colors.muted} />
+                    <X size={16} color={colors.muted} strokeWidth={1.8} />
                   </Button>
                 )}
               </View>
@@ -139,18 +174,18 @@ export default function Home() {
                   backgroundColor: colors.peach,
                   borderRadius: 20,
                   overflow: 'hidden',
-                  marginBottom: 26,
+                  marginBottom: 22,
                 }}
               >
                 <Image
                   source={require('@/assets/images/beauty-counter.png')}
                   resizeMode="cover"
-                  style={{ position: 'absolute', width: '100%', height: 209 }}
+                  style={{ position: 'absolute', width: '100%', height: 209, resizeMode: 'cover' }}
                 />
                 <View
                   style={{
                     padding: 18,
-                    width: '60%',
+                    width: '64%',
                     height: '100%',
                     justifyContent: 'space-between',
                   }}
@@ -164,90 +199,228 @@ export default function Home() {
                   <Button
                     size="sm"
                     variant="tertiary"
-                    onPress={() =>
-                      router.push({ pathname: '/product/[id]', params: { id: 'daily-hydration' } })
-                    }
+                    onPress={() => router.push('/analysis')}
                     style={{
                       alignSelf: 'flex-start',
                       paddingHorizontal: 0,
                       backgroundColor: 'transparent',
                     }}
                   >
-                    <Button.Label style={{ fontSize: 12 }}>Explore a serum</Button.Label>
-                    <ArrowUpRight size={16} color={colors.ink} />
+                    <Button.Label style={{ fontSize: 12 }}>Read a label</Button.Label>
+                    <ArrowUpRight size={16} color={colors.ink} strokeWidth={1.8} />
                   </Button>
                 </View>
               </View>
             )}
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 18 }}>
+              <Button
+                size="sm"
+                variant="secondary"
+                onPress={() => router.push('/routines')}
+                style={{ flex: 1 }}
+              >
+                <Button.Label numberOfLines={1}>Your routines</Button.Label>
+              </Button>
+              <Button
+                size="sm"
+                variant="tertiary"
+                onPress={() => router.push('/profile')}
+                style={{ flex: 1 }}
+              >
+                <Button.Label numberOfLines={1}>Skin profile</Button.Label>
+              </Button>
+            </View>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              style={{ marginHorizontal: -22, marginBottom: 26 }}
+              style={{ marginHorizontal: -22, marginBottom: 18 }}
               contentContainerStyle={{ paddingHorizontal: 22, gap: 8 }}
             >
-              {categories.map((item) => (
+              {[{ slug: '', name: 'All' }, ...(categories.data ?? [])].map((item) => (
                 <Button
-                  key={item}
+                  key={item.slug}
                   size="sm"
-                  variant={item === category ? 'primary' : 'tertiary'}
+                  variant={item.slug === category ? 'primary' : 'tertiary'}
                   onPress={() => {
-                    setCategory(item);
+                    setCategory(item.slug);
                     void Haptics.selectionAsync();
                   }}
                   style={{
                     borderRadius: 30,
-                    borderWidth: item === category ? 0 : 1,
+                    borderWidth: item.slug === category ? 0 : 1,
                     borderColor: colors.border,
                     paddingHorizontal: 16,
-                    backgroundColor: item === category ? colors.ink : colors.white,
+                    backgroundColor: item.slug === category ? colors.ink : colors.white,
                   }}
                 >
                   <Button.Label numberOfLines={1} style={{ fontSize: 12 }}>
-                    {item}
+                    {item.name}
                   </Button.Label>
                 </Button>
               ))}
+              <Button size="sm" variant="tertiary" onPress={() => router.push('/categories')}>
+                <Button.Label>More categories</Button.Label>
+              </Button>
             </ScrollView>
+            {categories.isError && (
+              <DataState
+                error={categories.error}
+                onAction={() => {
+                  void categories.refetch();
+                }}
+              />
+            )}
             <View
               style={{
                 flexDirection: 'row',
-                justifyContent: 'space-between',
                 alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
                 marginBottom: 17,
               }}
             >
-              <AppText weight="semibold" style={{ fontSize: 22, letterSpacing: -0.6 }}>
-                {filtering ? 'Search results' : 'Popular picks'}
+              <AppText weight="semibold" style={{ flex: 1, fontSize: 22, letterSpacing: -0.6 }}>
+                {filtering
+                  ? 'Search results'
+                  : section === 'top_rated'
+                    ? 'Top rated'
+                    : 'Recently added'}
               </AppText>
-              <AppText style={{ fontSize: 12, color: colors.muted }}>
-                {filtered.length} {filtered.length === 1 ? 'product' : 'products'}
-              </AppText>
+              <Button
+                isIconOnly
+                size="sm"
+                variant="tertiary"
+                accessibilityLabel="Filters"
+                onPress={() => {
+                  setShowFilters(!showFilters);
+                  void Haptics.selectionAsync();
+                }}
+              >
+                <SlidersHorizontal size={20} color={colors.ink} strokeWidth={1.8} />
+              </Button>
             </View>
+            {!filtering && (
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 18 }}>
+                {['top_rated', 'recently_added'].map((id) => (
+                  <Button
+                    key={id}
+                    size="sm"
+                    variant={section === id ? 'secondary' : 'tertiary'}
+                    onPress={() => {
+                      setSection(id);
+                      void Haptics.selectionAsync();
+                    }}
+                  >
+                    <Button.Label>{id === 'top_rated' ? 'Top rated' : 'New arrivals'}</Button.Label>
+                  </Button>
+                ))}
+              </View>
+            )}
+            {showFilters && (
+              <View style={{ gap: 12, marginBottom: 24 }}>
+                <AppText weight="medium">Score band</AppText>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {(['low', 'moderate', 'high'] as const).map((value) => (
+                    <Button
+                      size="sm"
+                      variant={band === value ? 'primary' : 'secondary'}
+                      key={value}
+                      onPress={() => {
+                        setBand(band === value ? undefined : value);
+                        void Haptics.selectionAsync();
+                      }}
+                    >
+                      <Button.Label>
+                        {value === 'low'
+                          ? 'Low concern'
+                          : value === 'moderate'
+                            ? 'Moderate'
+                            : 'High concern'}
+                      </Button.Label>
+                    </Button>
+                  ))}
+                </View>
+                <Input
+                  accessibilityLabel="Include ingredients"
+                  placeholder="Include ingredients, separated by commas"
+                  value={include}
+                  onChangeText={setInclude}
+                />
+                <Input
+                  accessibilityLabel="Exclude ingredients"
+                  placeholder="Exclude ingredients, separated by commas"
+                  value={exclude}
+                  onChangeText={setExclude}
+                />
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onPress={() => {
+                    setApplied({
+                      include: include
+                        .split(',')
+                        .map((v) => v.trim())
+                        .filter(Boolean)
+                        .slice(0, 10),
+                      exclude: exclude
+                        .split(',')
+                        .map((v) => v.trim())
+                        .filter(Boolean)
+                        .slice(0, 10),
+                    });
+                    void Haptics.selectionAsync();
+                  }}
+                >
+                  <Button.Label>Apply ingredients</Button.Label>
+                </Button>
+                <Button size="sm" variant="tertiary" onPress={clear}>
+                  <Button.Label>Clear filters</Button.Label>
+                </Button>
+                <AppText style={{ fontSize: 11, color: colors.muted }}>
+                  Category and ingredient filters show scored products only.
+                </AppText>
+              </View>
+            )}
           </>
         }
         ListEmptyComponent={
-          <View style={{ alignItems: 'center', paddingVertical: 44, gap: 18 }}>
-            <Search size={32} color={colors.muted} strokeWidth={1.8} />
-            <AppText weight="medium">No products match your search.</AppText>
-            <Button variant="secondary" onPress={clear}>
-              <Button.Label>Clear filters</Button.Label>
-            </Button>
-          </View>
+          result.isPending ? (
+            <LoadingState />
+          ) : result.isError ? (
+            <DataState
+              error={result.error}
+              onAction={() => {
+                void result.refetch();
+              }}
+            />
+          ) : (
+            <DataState
+              message="No products found."
+              action={filtering ? 'Clear filters' : 'Refresh'}
+              onAction={
+                filtering
+                  ? clear
+                  : () => {
+                      void result.refetch();
+                    }
+              }
+            />
+          )
         }
         ListFooterComponent={
-          <View
-            style={{
-              flexDirection: 'row',
-              gap: 8,
-              marginTop: 30,
-              paddingTop: 18,
-              borderTopWidth: 1,
-              borderTopColor: colors.border,
-            }}
-          >
-            <FlaskConical size={17} color={colors.muted} strokeWidth={1.8} />
-            <AppText style={{ flex: 1, color: colors.muted, fontSize: 11, lineHeight: 17 }}>
-              {demoNotice}
+          <View style={{ marginTop: 26, gap: 18 }}>
+            {result.isFetchingNextPage && <LoadingState />}
+            {data.length > 0 && result.isError && (
+              <DataState
+                error={result.error}
+                onAction={() => {
+                  if (result.hasNextPage) void result.fetchNextPage();
+                  else void result.refetch();
+                }}
+              />
+            )}
+            <AppText style={{ fontSize: 11, color: colors.muted, lineHeight: 17 }}>
+              Scores may be estimated. Open a product for details. Not medical advice.
             </AppText>
           </View>
         }

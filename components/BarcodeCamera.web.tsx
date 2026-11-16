@@ -21,7 +21,7 @@ export default function BarcodeCamera(_props: BarcodeCameraProps) {
         Your next discovery.
       </AppText>
       <AppText style={{ textAlign: 'center', lineHeight: 21, color: colors.ink }}>
-        Camera scanning is available on iOS and Android. Enter a barcode or try a sample below.
+        Camera scanning is available on iOS and Android. Enter a barcode below.
       </AppText>
     </View>
   );

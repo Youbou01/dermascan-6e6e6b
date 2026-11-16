@@ -1,15 +1,21 @@
 import { View } from 'react-native';
 import { colors } from '@/lib/theme';
 import { AppText } from '@/components/AppText';
-import { getScore, getScoreRating, type Product, type Rating } from '@/lib/catalog';
-export const ratingColors: Record<Rating, { foreground: string; background: string }> = {
-  favorable: { foreground: colors.green, background: colors.greenSoft },
-  caution: { foreground: colors.orange, background: colors.orangeSoft },
-  flagged: { foreground: colors.red, background: colors.redSoft },
+import type { RiskBand } from '@/lib/api/types';
+export const ratingColors: Record<RiskBand, { foreground: string; background: string }> = {
+  low: { foreground: colors.green, background: colors.greenSoft },
+  moderate: { foreground: colors.orange, background: colors.orangeSoft },
+  high: { foreground: colors.red, background: colors.redSoft },
+  unknown: { foreground: colors.muted, background: colors.border },
 };
-export function ScoreBadge({ product }: { product: Product }) {
-  const score = getScore(product);
-  const palette = ratingColors[getScoreRating(score)];
+export const bandLabels: Record<RiskBand, string> = {
+  low: 'Low concern',
+  moderate: 'Moderate',
+  high: 'High concern',
+  unknown: 'Not rated',
+};
+export function ScoreBadge({ score, band }: { score: number | null; band: RiskBand | null }) {
+  const palette = ratingColors[score === null ? 'unknown' : (band ?? 'unknown')];
   return (
     <View
       style={{
@@ -28,7 +34,7 @@ export function ScoreBadge({ product }: { product: Product }) {
         numberOfLines={1}
         style={{ fontSize: 11, color: palette.foreground }}
       >
-        {score}/100 · Demo
+        {score === null ? 'Not scored' : `${score}/100`}
       </AppText>
     </View>
   );

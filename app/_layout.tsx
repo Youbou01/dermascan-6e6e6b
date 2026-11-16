@@ -29,6 +29,9 @@ import { initPostHog } from '@/lib/posthog';
 import { registerServiceWorker } from '@/lib/registerServiceWorker';
 import { reportErrorToParent } from '@/lib/reportPreviewError';
 import { InstallPrompt } from '@/components/InstallPrompt';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from '@/lib/api/queries';
+import { useSession } from '@/lib/session';
 
 /**
  * Custom ErrorBoundary that reports React render errors to the parent window (Bilt preview iframe)
@@ -62,6 +65,23 @@ export default function RootLayout() {
     Inter_600SemiBold,
     Inter_700Bold,
   });
+
+  useEffect(() => {
+    return useSession.subscribe((state, previous) => {
+      const previousUserId = previous.session?.user.id;
+      if (previousUserId && state.session?.user.id !== previousUserId) {
+        const filters = {
+          predicate: (query: { queryKey: readonly unknown[] }) =>
+            query.queryKey.includes(previousUserId),
+        };
+        void queryClient.cancelQueries(filters);
+        queryClient.removeQueries(filters);
+      }
+    });
+  }, []);
+  useEffect(() => {
+    void useSession.getState().initialize();
+  }, []);
 
   // Report uncaught JS errors and unhandled promise rejections to parent (Bilt preview iframe)
   useEffect(() => {
@@ -148,20 +168,31 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <HeroUINativeProvider>
-        <Stack
-          screenOptions={{
-            headerStyle: { backgroundColor: colors.background },
-            headerTintColor: colors.ink,
-            headerTitleStyle: { fontFamily: 'Inter_600SemiBold', fontSize: 16 },
-            headerShadowVisible: false,
-            contentStyle: { backgroundColor: colors.background },
-          }}
-        >
-          <Stack.Screen name="(tabs)" options={{ title: 'Home', headerShown: false }} />
-          <Stack.Screen name="product/[id]" options={{ title: 'Product details' }} />
-          <Stack.Screen name="scan" options={{ title: 'Scan a product' }} />
-        </Stack>
-        <InstallPrompt />
+        <QueryClientProvider client={queryClient}>
+          <Stack
+            screenOptions={{
+              headerStyle: { backgroundColor: colors.background },
+              headerTintColor: colors.ink,
+              headerTitleStyle: { fontFamily: 'Inter_600SemiBold', fontSize: 16 },
+              headerShadowVisible: false,
+              contentStyle: { backgroundColor: colors.background },
+            }}
+          >
+            <Stack.Screen name="(tabs)" options={{ title: 'Home', headerShown: false }} />
+            <Stack.Screen name="product/[id]" options={{ title: 'Product details' }} />
+            <Stack.Screen name="scan" options={{ title: 'Scan a product' }} />
+            <Stack.Screen name="account" options={{ title: 'Account' }} />
+            <Stack.Screen name="profile" options={{ title: 'Skin profile' }} />
+            <Stack.Screen name="avoidance" options={{ title: 'Products you avoid' }} />
+            <Stack.Screen name="routines" options={{ title: 'Your routines' }} />
+            <Stack.Screen name="routine/add" options={{ title: 'Add a routine step' }} />
+            <Stack.Screen name="recommendations" options={{ title: 'Recommendations' }} />
+            <Stack.Screen name="analysis" options={{ title: 'Read a label' }} />
+            <Stack.Screen name="contribute" options={{ title: 'Submit a product' }} />
+            <Stack.Screen name="categories" options={{ title: 'Categories' }} />
+          </Stack>
+          <InstallPrompt />
+        </QueryClientProvider>
       </HeroUINativeProvider>
     </GestureHandlerRootView>
   );

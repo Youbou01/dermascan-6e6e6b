@@ -2,6 +2,71 @@
 
 [![Built with Bilt](https://img.shields.io/endpoint?url=https%3A%2F%2Fapp.bilt.me%2Fapi%2Fbadge)](https://bilt.me)
 
+## DermaScan live integration
+
+This Expo app is the replacement presentation layer for the existing DermaScan FastAPI/PostgreSQL backend. It preserves the peach-and-ink-blue design. There are no demo catalog or scoring fallbacks.
+
+The public API origin defaults to `https://dermascan-iorj.onrender.com`; set `EXPO_PUBLIC_API_URL` to a different **origin**, without `/api/v1`, when needed. No privileged API keys belong in this variable. Native sessions use SecureStore; browser sessions are memory-only. Refresh is serialized and private queries are isolated by account. Session recording is disabled because profiles contain health information.
+
+### Implemented routes
+
+- `/`: paginated top-rated/recent shelves, product-name/brand search, categories, concern-band and ingredient inclusion/exclusion filters.
+- `/categories`, `/product/[id]`, `/scan`: category tree, real ingredient/score details, barcode camera/manual lookup.
+- `/account`, `/profile`, `/avoidance`: registration, sign-in, refresh, device sign-out, skin profile and avoided products. Allergies/ingredient avoidance are managed from product ingredient explanations using canonical IDs.
+- `/routines`, `/routine/add`, `/recommendations`: ordered steps, notes, completion toggles, server conflict checks, profile skin-type recommendations and explicit replacement confirmation.
+- `/analysis`, `/contribute`: text/OCR label analysis and asynchronous product submission, without claiming a submission is already cataloged.
+
+Missing, non-HTTPS, localhost and failed product images show `Photo unavailable`. Product score zero is valid; null means insufficient data. Unknown ingredients are not considered safe. Estimated-score badges use the detail response; home badges do not claim final scores because the deployed home API has an estimated-flag defect.
+
+### Backend handoff — not deployed from this workspace
+
+The linked backend source was corrected in these files, with no schema migration or database writes:
+
+- `src/app/modules/catalog/home_repository.py` and `home_service.py`: preserve `score_is_estimated` in home cards.
+- `src/app/modules/catalog/search_router.py` and `search_service.py`: forward the requested locale.
+- `src/app/api/v1/contributions.py`: bounded uploads, actual-image validation, true image extension/MIME and documented errors.
+- Two unit regression files under `tests/unit/`.
+
+Portable copies are included here so the fixes are not lost when only the app repository is exported. Start from the **current linked backend revision**, including its existing suitability implementation. From this app checkout:
+
+```sh
+python utils/apply_backend_fixes.py /path/to/dermascan/backend
+# Review the dry run, then:
+python utils/apply_backend_fixes.py /path/to/dermascan/backend --apply
+cd /path/to/dermascan/backend
+uv run ruff check --fix src/app/modules/catalog/home_repository.py src/app/modules/catalog/home_service.py src/app/modules/catalog/search_router.py src/app/modules/catalog/search_service.py src/app/api/v1/contributions.py tests/unit/test_mobile_catalog_contract.py tests/unit/test_contribution_upload_contract.py
+uv run ruff format src/app/modules/catalog/home_repository.py src/app/modules/catalog/home_service.py src/app/modules/catalog/search_router.py src/app/modules/catalog/search_service.py src/app/api/v1/contributions.py tests/unit/test_mobile_catalog_contract.py tests/unit/test_contribution_upload_contract.py
+uv run pytest tests/unit/test_mobile_catalog_contract.py tests/unit/test_contribution_upload_contract.py
+uv run pytest
+uv run python scripts/export_openapi.py
+```
+
+The patcher is dry-run by default, validates exact source context and Python syntax before writing, and does not contact storage, the database or Render. These Python checks were **not run in this workspace**. Run the backend CI suite and review the regenerated contract, then commit/deploy the backend revision through its normal deployment process.
+
+### Verified deployment gaps (2026-11-16)
+
+- Public home, product details, search and home shelf pagination respond successfully; public catalog/details render in the web preview.
+- The deployed OpenAPI lacks `/api/v1/products/{product_id}/suitability`, and the known-product URL returns generic HTTP 404. The linked source includes the route and service. Deploy the correct full backend revision before accepting compatibility.
+- Deployed search summaries omit `score_is_estimated`; local source includes it. Home incorrectly returns false for a product whose detail returns true.
+- Some non-null photos use `http://localhost:9000/...`; repair the public `IMAGE_CDN_BASE_URL` in the backend deployment before generating further photo URLs. Existing stored URLs need separate repair.
+- Private flows, OCR provider availability, contribution processing and native camera/uploads still require signed-in/device acceptance tests. No chat credentials were embedded or used for testing.
+- UI is currently English; full French/Arabic interface localization and RTL remain a release follow-up.
+- Backend account deletion/password-reset/token-revocation APIs are absent; do not advertise them. Device sign-out clears local credentials, not server tokens.
+- Expo Doctor currently reports 19/20 checks passed and three patch-version warnings (Expo, dev client, SecureStore); SecureStore is intentionally on the carried preview patch. Dependency tree resolves cleanly.
+
+### Acceptance before removing the old frontend
+
+1. Rotate the credentials shared in chat. Use the app sign-in form with a test account; never add passwords/tokens to source, screenshots or analytics.
+2. Catalog: browse both shelves, load further pages, search accent-insensitive product names, combine categories/ingredients/bands, clear empty results and retry network failures. Category/ingredient filtering deliberately lists scored products only.
+3. Detail: verify zero versus null, estimated flags, unmatched ingredients and missing/broken photos. Barcode: test known, valid unknown and malformed codes, permission refusal and repeated camera scans.
+4. Sessions: sign in/register, restart native app, renew an expired access token, reject an expired refresh token, sign out and switch accounts without replaying another account's requests.
+5. Profile: save health fields without losing allergies added on product pages; add/remove allergy and ingredient/product avoidance; refresh suitability after changes. Never treat an unset profile as compatible.
+6. Routines: add with explicit step type, reject duplicates, review conflicts before confirming, reorder, save notes, remove, toggle completion once, and explicitly confirm recommendation replacement. Recommendations use skin type, not full allergy/health screening.
+7. Labels/submissions: try readable/unreadable photos, unsupported type, >10 MB, OCR failure, text correction and asynchronous submission receipt. Confirm worker results separately; there is no contribution-status endpoint.
+8. Test narrow screens, keyboard access, screen readers, iOS/Android back gestures, camera permissions and real photo uploads on devices.
+
+The old linked frontend remains untouched as an acceptance/rollback reference. No destructive cutover or database/image backfill was performed. For photos, first inventory existing storage keys and repair matching URLs in a dry-run batch; enqueue only truly missing assets afterward rather than rerunning the whole enrichment pipeline.
+
 ## Project info
 
 **Project URL**: https://app.bilt.me/agent/6e6e6bf5-e046-411a-8683-f880812e38a7
