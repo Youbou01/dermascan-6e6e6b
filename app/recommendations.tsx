@@ -93,8 +93,10 @@ export default function RecommendationsScreen() {
                       <View
                         key={`${step.step_order}-${step.product.id}`}
                         style={{
-                          borderTopWidth: 1,
-                          borderTopColor: colors.border,
+                          borderWidth: 1,
+                          borderRadius: 20,
+                          paddingHorizontal: 16,
+                          borderColor: colors.border,
                           paddingVertical: 12,
                           gap: 6,
                         }}
